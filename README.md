@@ -14,14 +14,14 @@ git clone ...
 ```
 ## Commands
 
-| Command                              | Description                                                 |
-| ------------------------------------ | ----------------------------------------------------------- |
-| `/location <username>`                 | Prints the status for a user                                |
-| `/location <team_name>`                | Prints the status of all members beloning to a team         |
-| `/location team create <team_name>`    | Creates a new team with name `team_name`                      |
-| `/location team delete <team_name>`    | Deletes a team with name `team_name`.  **This cannot be undone**  |
-| `/location <team_name> add <username>` | Adds a user to a team                                       |
-| `/location <team_name> del <username>` | Removes a user from a team                                  |
+| Command                                   | Description                                                 |
+| ----------------------------------------- | ----------------------------------------------------------- |
+| `/location <username>`                      | Prints the status for a user                                |
+| `/location <team_name>`                     | Prints the status of all members beloning to a team         |
+| `/location team create <team_name>`         | Creates a new team with name `team_name`                      |
+| `/location team delete <team_name>     `    | Deletes a team with name `team_name`.  **This cannot be undone**  |
+| `/location team <team_name> add <username>` | Adds a user to a team                                       |
+| `/location team <team_name> del <username>` | Removes a user from a team                                  |
 
 ## Usage example
 
@@ -42,7 +42,7 @@ Create a new team with the name "IAmTheSenate"
 
 Add a new member to the team:
 ```sh
-/location IAmTheSenate add Palpatine
+/location team IAmTheSenate add Palpatine
 ```
 ## Development setup
 
