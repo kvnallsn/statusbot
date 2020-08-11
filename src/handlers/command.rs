@@ -319,7 +319,7 @@ pub fn location_team_status(team: &str, state: &State) -> Vec<Value> {
         blocks.push(json!({
             "type": "header",
             "text": {
-                "type": "mrkdwn",
+                "type": "plain_text",
                 "text": format!("{} Status", team),
             }
         }));
