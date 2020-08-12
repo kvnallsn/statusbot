@@ -3,7 +3,7 @@
 
 StatusBot provides a way for managers or team leads to quickly find the status of a user.  It monitors a slack channel (say, `#daily_status`) for updates which can then be queried through the `/location` command.
 
-![](header.png)
+![StatusBot Demo](statusbot.gif)
 
 ## Installation
 
