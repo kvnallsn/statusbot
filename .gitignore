@@ -152,3 +152,4 @@ $RECYCLE.BIN/
 
 # End of https://www.toptal.com/developers/gitignore/api/vim,rust,dotenv,sublimetext,visualstudiocode,osx,linux,windows
 /target
+*.sqlite3*

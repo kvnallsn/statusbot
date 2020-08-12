@@ -19,6 +19,10 @@ struct FormRegister {
     pub ty: String,
 }
 
+/// Handles initial registration of bot with Slack
+///
+/// # Arguments
+/// * `body` - Request body to parse as JSON
 pub fn url_verification(body: &[u8]) -> tide::Result<tide::Response> {
     let form: FormRegister = serde_json::from_slice(body)?;
 

@@ -1,15 +1,17 @@
-//! Register this slack app
+//! Handle callback events
 
-use crate::State;
+use crate::{models::User, SqlConn};
 use anyhow::Result;
 use dotenv_codegen::dotenv;
 use serde::Deserialize;
 use serde_json::json;
 use tide::StatusCode;
 
+/// Specific types of events that our bot is registered to receive
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum AppEvent {
+    /// This event occurs when somebody mentions our bot (@statusbot)
     #[serde(alias = "app_mention")]
     AppMention {
         user: String,
@@ -19,6 +21,8 @@ pub enum AppEvent {
         event_ts: String,
     },
 
+    /// This event occurs when any messages that our bot has been invited to occur.  Examples of
+    /// messages occuring are posting new messages, deleting messages, etc.
     #[serde(alias = "message")]
     Message {
         channel: String,
@@ -59,7 +63,12 @@ struct Event {
     pub event_time: u64,
 }
 
-pub async fn callback(body: &[u8], state: &State) -> tide::Result<tide::Response> {
+/// Handle the event callback from a `POST` request
+///
+/// # Arguments
+/// * `body` - The body of the POST request
+/// * `db` - Conenction to the sql database
+pub async fn callback(body: &[u8], db: &mut SqlConn) -> tide::Result<tide::Response> {
     // deserialize into the actual event type
     let event: Event = match serde_json::from_slice(body) {
         Ok(e) => e,
@@ -71,60 +80,71 @@ pub async fn callback(body: &[u8], state: &State) -> tide::Result<tide::Response
         }
     };
 
-    handle_app_event(event.event, state).await?;
+    handle_app_event(event.event, db).await?;
 
     let resp = tide::Response::builder(StatusCode::Ok).build();
 
     Ok(resp)
 }
 
-pub async fn handle_app_event(app_event: AppEvent, state: &State) -> Result<()> {
+/// Handle the actual event received after it has been unpacked
+///
+/// # Arguments
+/// * `app_event` - Specific event received
+/// * `db` - Connection to the SQL database
+pub async fn handle_app_event(app_event: AppEvent, db: &mut SqlConn) -> Result<()> {
     match app_event {
         AppEvent::AppMention {
             user,
             text,
             channel,
+            event_ts,
             ..
-        } => handle_mention(state, user, text, channel).await,
+        } => handle_mention(db, user, text, channel, event_ts).await,
 
         AppEvent::Message {
             user,
             text,
             channel,
             ..
-        } => handle_message(state, user, text, channel).await,
+        } => handle_message(db, user, text, channel).await,
     }
 }
 
 /// Handles an `app_mention` event
 ///
 /// # Arguments
-/// * `state` - Application State
 /// * `user` - User who mentioned the bot
 /// * `text` - Text the user entered
 /// * `channel` - What channel this occured in
+/// * `event_ts` - The timestamp the event occured (used in response to add emoji)
 pub async fn handle_mention(
-    state: &State,
+    db: &mut SqlConn,
     user: String,
     text: String,
     channel: String,
+    event_ts: String,
 ) -> Result<()> {
-    {
-        // first lock the mutex to perform a write update
-        // parse text contained as the user's status
-        let mut map = state.status_map.write();
-        map.insert(user.clone(), text.clone());
-    }
+    // strip statusbot prefix, but if striping fails, keep the original text
+    let status = text
+        .strip_prefix("@statusbot ")
+        .map(|s| s.to_owned())
+        .unwrap_or_else(|| text);
 
-    let resp = surf::post("https://slack.com/api/chat.postEphemeral")
+    let mut user = User::new(user);
+    user.set_status(status);
+    user.save(&mut *db).await?;
+
+    // Respond with a thumbs up to let the user know the message has been received
+    let resp = surf::post("https://slack.com/api/reactions.add")
         .set_header(
             "Authorization",
             format!("Bearer {}", dotenv!("SLACK_BOT_TOKEN")),
         )
         .body_json(&json!({
-            "text": format!("Hello <@{}> who said '{}'", user, text),
-            "user": user,
             "channel": channel,
+            "name": "thumbsup",
+            "timestamp": event_ts
         }))?
         .await
         .unwrap();
@@ -140,23 +160,22 @@ pub async fn handle_mention(
 /// Handles an `app_mention` event
 ///
 /// # Arguments
-/// * `state` - Application State
 /// * `user` - User who mentioned the bot
 /// * `text` - Text the user entered
 /// * `channel` - What channel this occured in
 pub async fn handle_message(
-    state: &State,
+    db: &mut SqlConn,
     user: String,
     text: String,
-    channel: String,
+    _channel: String,
 ) -> Result<()> {
     // TODO verify the channel is daily_status
-    {
-        // first lock the mutex to perform a write update
-        // parse text contained as the user's status
-        let mut map = state.status_map.write();
-        map.insert(user.clone(), text.clone());
-    }
+
+    let mut user = User::new(user);
+    user.set_status(text);
+    user.save(&mut *db).await?;
+
+    // Note: since this is a passive monitor, we don't acknowledge receiving the messages
 
     Ok(())
 }

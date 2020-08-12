@@ -4,11 +4,19 @@ mod handlers {
     pub(crate) mod register;
 }
 
+mod models {
+    mod team;
+    mod user;
+
+    pub use self::team::Team;
+    pub use self::user::User;
+}
+
 use anyhow::Result;
 use async_std::task;
-use parking_lot::RwLock;
+use async_trait::async_trait;
 use serde_json::Value;
-use std::{collections::HashMap, sync::Arc};
+use sqlx::{pool::PoolConnection, sqlite::SqlitePool, Sqlite};
 use tide::{
     http::headers::HeaderValue,
     security::{CorsMiddleware, Origin},
@@ -17,32 +25,55 @@ use tide::{
 use tide_tracing::TraceMiddleware;
 use tracing::Level;
 
-#[derive(Clone, Debug)]
-pub struct State {
-    /// mapping of team name to a list of team members
-    teams: Arc<RwLock<HashMap<String, Vec<String>>>>,
+type SqlConn = PoolConnection<Sqlite>;
 
-    /// Current status of individual members
-    status_map: Arc<RwLock<HashMap<String, String>>>,
+#[async_trait]
+pub trait HasDb {
+    type Target;
+    type Error;
+
+    async fn db(&self) -> std::result::Result<Self::Target, Self::Error>;
 }
 
-impl State {
-    pub fn new() -> Self {
-        State {
-            teams: Arc::new(RwLock::new(HashMap::new())),
-            status_map: Arc::new(RwLock::new(HashMap::new())),
-        }
+#[async_trait]
+impl HasDb for tide::Request<State> {
+    type Target = PoolConnection<Sqlite>;
+    type Error = sqlx::Error;
+
+    async fn db(&self) -> std::result::Result<Self::Target, Self::Error> {
+        self.state().pool.acquire().await
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct State {
+    /// A configured sqlite pool
+    pool: SqlitePool,
+}
+
+impl State {
+    pub fn new(pool: SqlitePool) -> Self {
+        State { pool }
+    }
+}
+
+/// Handles all `POST`s received to the root (`/`) uri.
+///
+/// Depending on the `type` JSON field, dispatches messages to the appropriate handler
+///
+/// # Arguments
+/// * `req`- Incoming HTTP request
 pub async fn handle_post(mut req: tide::Request<State>) -> tide::Result<tide::Response> {
     // first decode the body as an unknown JSON request to extract the type
     let body = req.body_bytes().await?;
     let json: Value = serde_json::from_slice(&body)?;
 
+    // now get a connection to the sqlite database
+    let mut conn = req.db().await?;
+
     match json["type"].as_str() {
         Some("url_verification") => handlers::register::url_verification(&body),
-        Some("event_callback") => handlers::event::callback(&body, req.state()).await,
+        Some("event_callback") => handlers::event::callback(&body, &mut conn).await,
 
         // ignore all other events, but respond with 200 OK so we don't get blocked by Slack
         _ => Ok(tide::Response::builder(StatusCode::Ok).build()),
@@ -66,15 +97,17 @@ async fn run_server() -> Result<()> {
     // configure tracing middleware
     let trace = TraceMiddleware::new();
 
+    // connect to sqlite and build connection pool
+    let pool = SqlitePool::connect("sqlite://statusbot.sqlite3").await?;
+
     // create the actual web app
-    let mut app = tide::with_state(State::new());
+    let mut app = tide::with_state(State::new(pool));
 
     // enable middlewares
     app.with(cors);
     app.with(trace);
 
     // add routes
-    //app.at("/").post(routes::register::post_register);
     app.at("/").post(handle_post);
     app.at("/location").post(handlers::command::location);
 

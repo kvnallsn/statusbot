@@ -1,15 +1,28 @@
-use crate::State;
+use crate::{
+    models::{Team, User},
+    HasDb, State,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::borrow::Cow;
 use tide::StatusCode;
 
-macro_rules! extract_user_id {
-    ($user:expr) => {
-        $user
-            .trim_matches(|c| c == '<' || c == '>' || c == '@')
-            .split('|')
-            .next()
-    };
+macro_rules! mrkdwn {
+    ($container:expr, $text:expr) => {
+        $container.push(serde_json::json!({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": $text,
+            }
+        }))
+    }
+}
+
+macro_rules! divider {
+    ($container:expr) => {
+        $container.push(serde_json::json!({ "type": "divider" }))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,7 +61,102 @@ struct SlashCommand {
     pub api_app_id: String,
 }
 
+pub enum SlashAction<'a> {
+    /// Shows a user's last set status
+    ShowUser { user: &'a str },
+
+    /// Shows all members on a team statuses
+    ShowTeam { team: &'a str },
+
+    /// Creates a new team
+    CreateTeam { name: &'a str },
+
+    /// Deletes an existing team
+    DeleteTeam { name: &'a str },
+
+    /// Adds a memeber to an existing team
+    AddMember { team: &'a str, user: &'a str },
+
+    /// Removes a member from an existing team
+    RemoveMember { team: &'a str, user: &'a str },
+
+    /// A specific error message is parsing failed
+    ParsingFailed(Cow<'a, str>),
+}
+
+impl<'a> SlashAction<'a> {
+    /// Parses a received command line into a `SlashAAction`
+    ///
+    /// # Arguments
+    /// * `text` - Text received from `SlashCommand`
+    ///
+    /// # Examples
+    /// ```rust
+    /// let action = SlashAction::parse("team create Senate");
+    /// assert_eq!(action, SlashAction::CreateTeam { team: "Senate" });
+    /// ```
+    pub fn parse(text: &'a str) -> anyhow::Result<Self> {
+        // first split text by whitespace, then iterate over it
+        let mut iter = text.split_whitespace();
+        match iter.next() {
+            Some("team") => match iter.next() {
+                Some("create") => match iter.next() {
+                    Some(team_name) => Ok(SlashAction::CreateTeam { name: team_name }),
+                    None => Ok(SlashAction::ParsingFailed(
+                        "Please specify a team name when creating a team".into(),
+                    )),
+                },
+                Some("delete") => match iter.next() {
+                    Some(team_name) => Ok(SlashAction::DeleteTeam { name: team_name }),
+                    None => Ok(SlashAction::ParsingFailed(
+                        "Please specify a team name to delete".into(),
+                    )),
+                },
+                Some(team_name) => match iter.next() {
+                    Some("add") => match iter.next() {
+                        Some(user) => Ok(SlashAction::AddMember {
+                            team: team_name,
+                            user,
+                        }),
+                        None => Ok(SlashAction::ParsingFailed(
+                            format!("Please specify a user to add to team {}", team_name).into(),
+                        )),
+                    },
+                    Some("del") => match iter.next() {
+                        Some(user) => Ok(SlashAction::RemoveMember {
+                            team: team_name,
+                            user,
+                        }),
+                        None => Ok(SlashAction::ParsingFailed(
+                            format!("Please specify a user to delete from team {}", team_name)
+                                .into(),
+                        )),
+                    },
+                    _ => Ok(SlashAction::ParsingFailed(
+                        "Please specify either the `add` or `del` command".into(),
+                    )),
+                },
+                _ => Ok(SlashAction::ParsingFailed(
+                    "Please specify `create`, `delete`, or a team name".into(),
+                )),
+            },
+            Some(user) if user.starts_with(|c| c == '<' || c == '@') => {
+                Ok(SlashAction::ShowUser { user })
+            }
+            Some(team) => Ok(SlashAction::ShowTeam { team }),
+            None => Ok(SlashAction::ParsingFailed(
+                "Please specify a username, team name, or `team`".into(),
+            )),
+        }
+    }
+}
+
+/// Handle a `POST` request to the `/location` endpoint
+///
+/// # Arguments
+/// * `req` - Incoming HTTP request
 pub async fn location(mut req: tide::Request<State>) -> tide::Result<tide::Response> {
+    // parse the encoded form into a slash command, extracting the relevant details
     let form: SlashCommand = match req.body_form().await {
         Ok(form) => form,
         Err(e) => {
@@ -57,287 +165,102 @@ pub async fn location(mut req: tide::Request<State>) -> tide::Result<tide::Respo
         }
     };
 
-    // split text by spaces
-    let mut text = form.text.split_whitespace();
-    let cmd = match text.next() {
-        Some(c) => c,
-        None => {
-            tracing::error!("No command entered");
-            return Ok(tide::Response::builder(StatusCode::Ok).build());
+    // grab a connection to the database
+    let mut db = req.db().await?;
+
+    // create our response structure of blocks
+    let mut blocks: Vec<Value> = vec![];
+
+    // parse and execute the text received as commands
+    match SlashAction::parse(&form.text)? {
+        SlashAction::ShowUser { user } => match User::fetch(&mut db, user).await {
+            Some(user) => match user.status {
+                Some(status) => mrkdwn!(blocks, format!("*<@{}>*: {}", user.id, status)),
+                None => mrkdwn!(blocks, format!("*<@{}>* has not set a status", user.id)),
+            },
+            None => mrkdwn!(blocks, "User not found"),
+        },
+
+        SlashAction::ShowTeam { team } => match Team::members(&mut db, team).await {
+            Ok(members) => {
+                for member in members {
+                    match member.status {
+                        Some(status) => mrkdwn!(blocks, format!("*<@{}>*: {}", member.id, status)),
+                        None => mrkdwn!(blocks, format!("*<@{}>* has not set a status", member.id)),
+                    }
+                }
+            }
+            Err(_) => mrkdwn!(blocks, format!("Team *{}* not found", team)),
+        },
+
+        SlashAction::CreateTeam { name } => match Team::new(&mut db, name).await {
+            Ok(team) => mrkdwn!(
+                blocks,
+                format!("Team *{}* successfully created!", team.name)
+            ),
+            Err(_) => mrkdwn!(
+                blocks,
+                format!("Failed to create Team {}, perhaps it already exists?", name)
+            ),
+        },
+
+        SlashAction::DeleteTeam { name } => match Team::fetch(&mut db, name).await {
+            Some(team) => match team.delete(&mut db).await {
+                Ok(_) => mrkdwn!(blocks, format!("Team *{}* deleted", name)),
+                Err(_) => mrkdwn!(
+                    blocks,
+                    format!("Failed to delete Team *{}*. Please try again later", name)
+                ),
+            },
+            None => mrkdwn!(blocks, format!("Team *{}* not found", name)),
+        },
+
+        SlashAction::AddMember { team, user } => match Team::fetch(&mut db, team).await {
+            Some(team) => match User::fetch(&mut db, user).await {
+                Some(user) => match team.add_member(&mut db, &user).await {
+                    Ok(_) => mrkdwn!(
+                        blocks,
+                        format!("<@{}> added to team {}", user.id, team.name)
+                    ),
+                    Err(_) => mrkdwn!(
+                        blocks,
+                        format!("Failed to add user <@{}> to Team {}", user.id, team.name)
+                    ),
+                },
+                None => mrkdwn!(blocks, format!("User with id *{}* not found", user)),
+            },
+            None => mrkdwn!(blocks, format!("Team *{}* not found", team)),
+        },
+
+        SlashAction::RemoveMember { team, user } => match Team::fetch(&mut db, team).await {
+            Some(team) => match User::fetch(&mut db, user).await {
+                Some(user) => match team.delete_member(&mut db, &user).await {
+                    Ok(_) => mrkdwn!(
+                        blocks,
+                        format!("<@{}> deleted from team {}", user.id, team.name)
+                    ),
+                    Err(_) => mrkdwn!(
+                        blocks,
+                        format!(
+                            "Failed to delete user <@{}> from Team {}",
+                            user.id, team.name
+                        )
+                    ),
+                },
+                None => mrkdwn!(blocks, format!("User with id *{}* not found", user)),
+            },
+            None => mrkdwn!(blocks, format!("Team *{}* not found", team)),
+        },
+
+        SlashAction::ParsingFailed(reason) => {
+            mrkdwn!(blocks, "*Oh-no!* Invalid command or arguments");
+            divider!(blocks);
+            mrkdwn!(blocks, reason);
         }
-    };
-
-    let blocks = match cmd {
-        "" => location_help(),
-        "team" => location_team_cmd(text, req.state()),
-        user if user.starts_with(|c| c == '<' || c == '@') => location_user_cmd(user, req.state()),
-        team => location_team_status(team, req.state()),
-    };
-
-    let body = json!({ "blocks": blocks });
-    //tracing::debug!("{:#?}", body);
+    }
 
     Ok(tide::Response::builder(StatusCode::Ok)
         .header("Content-Type", "application/json")
         .body(json!({ "blocks": blocks }))
-        .body(body)
         .build())
-}
-
-/// Returns a simple help message about what commands are supported
-pub fn location_help() -> Vec<Value> {
-    vec![json!({})]
-}
-
-#[derive(Clone, Debug)]
-pub enum TeamMemberAction {
-    Add,
-    Delete,
-}
-
-/// Process the teams command
-pub fn location_team_cmd(mut iter: std::str::SplitWhitespace, state: &State) -> Vec<Value> {
-    let mut blocks = vec![];
-
-    // get the team name or the command
-    match iter.next() {
-        Some("create") => match iter.next() {
-            Some(team_name) => {
-                let mut teams = state.teams.write();
-                teams.insert(team_name.to_owned(), vec![]);
-
-                blocks.push(json!({
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": format!("Team '{}' successfully created", team_name),
-                    }
-                }));
-            }
-            None => blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "Please supply a team name when creating a team",
-                }
-            })),
-        },
-        Some("delete") => match iter.next() {
-            Some(team_name) => {
-                let mut teams = state.teams.write();
-                match teams.remove(team_name) {
-                    Some(_) => blocks.push(json!({
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": format!("Team '{}' successfully deleted", team_name),
-                        }
-                    })),
-                    None => blocks.push(json!({
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": format!("Team '{}' not found", team_name),
-                        }
-                    })),
-                }
-            }
-            None => blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "Please supply a team name when deleting a team",
-                }
-            })),
-        },
-
-        Some(team) => match iter.next() {
-            Some("add") => blocks.append(&mut location_team_add_del_user(
-                team,
-                TeamMemberAction::Add,
-                iter,
-                state,
-            )),
-            Some("del") => blocks.append(&mut location_team_add_del_user(
-                team,
-                TeamMemberAction::Delete,
-                iter,
-                state,
-            )),
-            None => blocks.append(&mut location_team_list_members(team, state)),
-            _ => blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("Team '{}' not found", team)
-                }
-            })),
-        },
-        None => blocks.push(json!({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Please supply a team name or command",
-            }
-        })),
-    };
-
-    blocks
-}
-
-/// Adds a user to a specific team
-///
-/// # Arguments
-/// * `team` - Team to interact with
-/// * `action` - Action to execute (add, remove)
-/// * `iter` - iterator containg rest of string to process
-/// * `state` - Application state
-pub fn location_team_add_del_user(
-    team: &str,
-    action: TeamMemberAction,
-    mut iter: std::str::SplitWhitespace,
-    state: &State,
-) -> Vec<Value> {
-    let mut blocks = vec![];
-
-    match iter.next() {
-        Some(user) => match extract_user_id!(user) {
-            Some(user) => {
-                let mut teams = state.teams.write();
-                match teams.get_mut(team) {
-                    Some(ref mut team_vec) => {
-                        match action {
-                            TeamMemberAction::Add => team_vec.push(user.to_owned()),
-                            TeamMemberAction::Delete => (),
-                        }
-                        blocks.push(json!({
-                            "type": "section",
-                            "text": {
-                                "type": "mrkdwn",
-                                "text": format!("Successfully {} '<@{}>' to team '{}'", match action { TeamMemberAction::Add => "added", TeamMemberAction::Delete => "deleted" }, user, team),
-                            }
-                        }));
-                    }
-                    None => blocks.push(json!({
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": format!("Team '{}' does not exist", team),
-                        }
-                    })),
-                }
-            }
-            None => blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("Please supply a user to {} to a team", match action { TeamMemberAction::Add => "add", TeamMemberAction::Delete => "delete" }),
-                }
-            })),
-        },
-        None => blocks.push(json!({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "Could not parse username or id",
-            }
-        }))
-    }
-
-    blocks
-}
-
-pub fn location_team_list_members(team: &str, state: &State) -> Vec<Value> {
-    let mut blocks = vec![];
-
-    let teams = state.teams.read();
-    if let Some(members) = teams.get(team) {
-        blocks.push(json!({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": format!("*{} members:*", team)
-            }
-        }));
-
-        for member in members {
-            blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("<@{}>", member)
-                }
-            }));
-        }
-    }
-
-    blocks
-}
-
-/// Handle printing status for a user
-pub fn location_user_cmd(user: &str, state: &State) -> Vec<Value> {
-    let mut blocks = vec![];
-    let status_map = state.status_map.read();
-
-    match extract_user_id!(user) {
-        Some(user) => match status_map.get(user) {
-            Some(status) => blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("<@{}>: {}", user, status),
-                }
-            })),
-
-            // if we didn't find a user, it could be a team name
-            None => blocks.push(json!({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": format!("<@{}> has not set a status", user),
-                }
-            })),
-        },
-        None => blocks.push(json!({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": format!("<@{}> not found", user),
-            }
-        })),
-    }
-
-    blocks
-}
-
-/// Handle printing status for a user
-pub fn location_team_status(team: &str, state: &State) -> Vec<Value> {
-    let mut blocks = vec![];
-
-    let teams = state.teams.read();
-    if let Some(members) = teams.get(team) {
-        blocks.push(json!({
-            "type": "header",
-            "text": {
-                "type": "plain_text",
-                "text": format!("{} Status", team),
-            }
-        }));
-
-        blocks.push(json!({ "type": "divider" }));
-
-        for member in members {
-            blocks.append(&mut location_user_cmd(member, state));
-        }
-    } else {
-        blocks.push(json!({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": format!("Team {} not found", team),
-            }
-        }));
-    }
-
-    blocks
 }
