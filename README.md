@@ -71,8 +71,6 @@ cargo run
 
 ## Meta
 
-Kevin Allison
-
 Distributed under the MIT license. See ``LICENSE`` for more information.
 
 [https://github.com/kvnallsn/statusbot]
