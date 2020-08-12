@@ -18,6 +18,7 @@ git clone ...
 | ----------------------------------------- | ----------------------------------------------------------- |
 | `/location <username>`                      | Prints the status for a user                                |
 | `/location <team_name>`                     | Prints the status of all members beloning to a team         |
+| `/location team list              `         | Lists available teams                                       |
 | `/location team create <team_name>`         | Creates a new team with name `team_name`                      |
 | `/location team delete <team_name>     `    | Deletes a team with name `team_name`.  **This cannot be undone**  |
 | `/location team <team_name> add <username>` | Adds a user to a team                                       |
@@ -25,14 +26,19 @@ git clone ...
 
 ## Usage example
 
-Query status of user "Obi-Wan":
+Query status of user "Anakin":
 ```sh
-/location @Obi-Wan
+/location @Anakin
 ```
 
 Query status of team "Senate":
 ```shA
 /location Senate
+```
+
+List available teams
+```sh
+/location team list
 ```
 
 Create a new team with the name "IAmTheSenate"
@@ -55,8 +61,13 @@ cargo run
 
 ## Release History
 
-* 0.0.1
-    * Work in progress
+* 0.1.0 - Initial Release
+    * @statusbot functionality:
+        * mentions
+        * passive monitor channel
+    * /location command:
+        * view user or team status
+        * list, create, edit, delete teams
 
 ## Meta
 

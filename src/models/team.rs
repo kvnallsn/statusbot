@@ -33,7 +33,8 @@ impl Team {
         .execute(&mut *db)
         .await?;
 
-        let row = sqlx::query!(
+        let team = sqlx::query_as!(
+            Team,
             "
             SELECT
                 id, name
@@ -47,10 +48,7 @@ impl Team {
         .fetch_one(&mut *db)
         .await?;
 
-        Ok(Team {
-            id: row.id,
-            name: row.name,
-        })
+        Ok(team)
     }
 
     /// Attempts to retrieve a team from the database, returning None if one does not exist
@@ -59,7 +57,8 @@ impl Team {
     /// * `db` - Connection to SQL database
     /// * `name` - Name of team to fetch
     pub async fn fetch(db: &mut SqlConn, name: &str) -> Option<Self> {
-        let mut row = sqlx::query!(
+        let mut row = sqlx::query_as!(
+            Team,
             "
             SELECT
                 id, name
@@ -72,10 +71,27 @@ impl Team {
         )
         .fetch(&mut *db);
 
-        row.try_next().await.ok().flatten().map(|r| Team {
-            id: r.id,
-            name: r.name,
-        })
+        row.try_next().await.ok().flatten()
+    }
+
+    /// Fetches all teams from the database
+    ///
+    /// # Arguments
+    /// * `db` - Conenction to the SQL database
+    pub async fn fetch_all(db: &mut SqlConn) -> anyhow::Result<Vec<Team>> {
+        let teams = sqlx::query_as!(
+            Team,
+            "
+            SELECT
+                id, name
+            FROM
+                teams
+            "
+        )
+        .fetch_all(&mut *db)
+        .await?;
+
+        Ok(teams)
     }
 
     /// Returns all members belonging to a team with name `name`
@@ -84,10 +100,11 @@ impl Team {
     /// * `db` - Connection to SQL database
     /// * `team_name` - Name of this team
     pub async fn members(db: &mut SqlConn, team_name: &str) -> anyhow::Result<Vec<User>> {
-        let rows = sqlx::query!(
+        let users = sqlx::query_as!(
+            User,
             "
             SELECT
-                user_id, status
+                user_id AS id, status
             FROM
                 team_members
             WHERE
@@ -98,13 +115,7 @@ impl Team {
         .fetch_all(&mut *db)
         .await?;
 
-        Ok(rows
-            .into_iter()
-            .map(|r| User {
-                id: r.user_id,
-                status: r.status,
-            })
-            .collect())
+        Ok(users)
     }
 
     /// Adds a member to this team.

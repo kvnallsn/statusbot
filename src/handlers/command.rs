@@ -7,6 +7,18 @@ use serde_json::{json, Value};
 use std::borrow::Cow;
 use tide::StatusCode;
 
+macro_rules! header {
+    ($container:expr, $text:expr) => {
+        $container.push(serde_json::json!({
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": $text,
+            }
+        }))
+    }
+}
+
 macro_rules! mrkdwn {
     ($container:expr, $text:expr) => {
         $container.push(serde_json::json!({
@@ -68,6 +80,9 @@ pub enum SlashAction<'a> {
     /// Shows all members on a team statuses
     ShowTeam { team: &'a str },
 
+    /// List all teams (no members)
+    ListTeams,
+
     /// Creates a new team
     CreateTeam { name: &'a str },
 
@@ -112,6 +127,9 @@ impl<'a> SlashAction<'a> {
                         "Please specify a team name to delete".into(),
                     )),
                 },
+
+                Some("list") => Ok(SlashAction::ListTeams),
+
                 Some(team_name) => match iter.next() {
                     Some("add") => match iter.next() {
                         Some(user) => Ok(SlashAction::AddMember {
@@ -183,6 +201,8 @@ pub async fn location(mut req: tide::Request<State>) -> tide::Result<tide::Respo
 
         SlashAction::ShowTeam { team } => match Team::members(&mut db, team).await {
             Ok(members) => {
+                header!(blocks, format!("{} Status", team));
+                divider!(blocks);
                 for member in members {
                     match member.status {
                         Some(status) => mrkdwn!(blocks, format!("*<@{}>*: {}", member.id, status)),
@@ -191,6 +211,17 @@ pub async fn location(mut req: tide::Request<State>) -> tide::Result<tide::Respo
                 }
             }
             Err(_) => mrkdwn!(blocks, format!("Team *{}* not found", team)),
+        },
+
+        SlashAction::ListTeams => match Team::fetch_all(&mut db).await {
+            Ok(teams) => {
+                header!(blocks, "Available Teams:");
+                divider!(blocks);
+                for team in teams {
+                    mrkdwn!(blocks, format!("• {}", team.name));
+                }
+            }
+            Err(_) => mrkdwn!(blocks, "Failed to fetch teams"),
         },
 
         SlashAction::CreateTeam { name } => match Team::new(&mut db, name).await {
@@ -216,8 +247,8 @@ pub async fn location(mut req: tide::Request<State>) -> tide::Result<tide::Respo
         },
 
         SlashAction::AddMember { team, user } => match Team::fetch(&mut db, team).await {
-            Some(team) => match User::fetch(&mut db, user).await {
-                Some(user) => match team.add_member(&mut db, &user).await {
+            Some(team) => match User::fetch_or_create(&mut db, user).await {
+                Ok(user) => match team.add_member(&mut db, &user).await {
                     Ok(_) => mrkdwn!(
                         blocks,
                         format!("<@{}> added to team {}", user.id, team.name)
@@ -227,7 +258,7 @@ pub async fn location(mut req: tide::Request<State>) -> tide::Result<tide::Respo
                         format!("Failed to add user <@{}> to Team {}", user.id, team.name)
                     ),
                 },
-                None => mrkdwn!(blocks, format!("User with id *{}* not found", user)),
+                Err(_) => mrkdwn!(blocks, format!("Failed to load user with id <@{}>", user)),
             },
             None => mrkdwn!(blocks, format!("Team *{}* not found", team)),
         },
