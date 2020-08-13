@@ -2,7 +2,6 @@
 
 use crate::{models::User, SqlConn};
 use anyhow::Result;
-use dotenv_codegen::dotenv;
 use serde::Deserialize;
 use serde_json::json;
 use tide::StatusCode;
@@ -139,7 +138,10 @@ pub async fn handle_mention(
     let resp = surf::post("https://slack.com/api/reactions.add")
         .set_header(
             "Authorization",
-            format!("Bearer {}", dotenv!("SLACK_BOT_TOKEN")),
+            format!(
+                "Bearer {}",
+                dotenv::var("SLACK_BOT_TOKEN").unwrap_or_else(|_| "".to_owned())
+            ),
         )
         .body_json(&json!({
             "channel": channel,

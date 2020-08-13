@@ -1,6 +1,5 @@
 //! Register this slack app
 
-use dotenv_codegen::dotenv;
 use serde::Deserialize;
 use serde_json::json;
 use tide::StatusCode;
@@ -26,13 +25,14 @@ struct FormRegister {
 pub fn url_verification(body: &[u8]) -> tide::Result<tide::Response> {
     let form: FormRegister = serde_json::from_slice(body)?;
 
-    if dotenv!("SLACK_APP_TOKEN") != form.token {
-        return Ok(tide::Response::builder(StatusCode::BadRequest).build());
+    match dotenv::var("SLACK_APP_TOKEN") {
+        Ok(token) if token == form.token => {
+            let resp = tide::Response::builder(StatusCode::Ok)
+                .body(json!({ "challenge": form.challenge }))
+                .build();
+
+            Ok(resp)
+        }
+        _ => Ok(tide::Response::builder(StatusCode::BadRequest).build()),
     }
-
-    let resp = tide::Response::builder(StatusCode::Ok)
-        .body(json!({ "challenge": form.challenge }))
-        .build();
-
-    Ok(resp)
 }
