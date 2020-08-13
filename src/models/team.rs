@@ -21,32 +21,13 @@ impl Team {
     /// # Arguments
     /// * `name` - Name of this team
     pub async fn new(db: &mut SqlConn, name: &str) -> anyhow::Result<Self> {
-        sqlx::query!(
-            "
-            INSERT INTO
-                teams (name)
-            VALUES
-                (?1)
-            ",
-            name
-        )
-        .execute(&mut *db)
-        .await?;
+        sqlx::query_file!("sql/team/insert.sql", name)
+            .execute(&mut *db)
+            .await?;
 
-        let team = sqlx::query_as!(
-            Team,
-            "
-            SELECT
-                id, name
-            FROM
-                teams
-            WHERE
-                name = ?1
-            ",
-            name
-        )
-        .fetch_one(&mut *db)
-        .await?;
+        let team = sqlx::query_file_as!(Team, "sql/team/fetch_by_name.sql", name)
+            .fetch_one(&mut *db)
+            .await?;
 
         Ok(team)
     }
@@ -57,19 +38,8 @@ impl Team {
     /// * `db` - Connection to SQL database
     /// * `name` - Name of team to fetch
     pub async fn fetch(db: &mut SqlConn, name: &str) -> Option<Self> {
-        let mut row = sqlx::query_as!(
-            Team,
-            "
-            SELECT
-                id, name
-            FROM
-                teams
-            WHERE
-                name = ?1
-            ",
-            name
-        )
-        .fetch(&mut *db);
+        let mut row =
+            sqlx::query_file_as!(Team, "sql/team/fetch_by_name.sql", name).fetch(&mut *db);
 
         row.try_next().await.ok().flatten()
     }
@@ -79,17 +49,9 @@ impl Team {
     /// # Arguments
     /// * `db` - Conenction to the SQL database
     pub async fn fetch_all(db: &mut SqlConn) -> anyhow::Result<Vec<Team>> {
-        let teams = sqlx::query_as!(
-            Team,
-            "
-            SELECT
-                id, name
-            FROM
-                teams
-            "
-        )
-        .fetch_all(&mut *db)
-        .await?;
+        let teams = sqlx::query_file_as!(Team, "sql/team/fetch_all.sql")
+            .fetch_all(&mut *db)
+            .await?;
 
         Ok(teams)
     }
@@ -100,20 +62,9 @@ impl Team {
     /// * `db` - Connection to SQL database
     /// * `team_name` - Name of this team
     pub async fn members(db: &mut SqlConn, team_name: &str) -> anyhow::Result<Vec<User>> {
-        let users = sqlx::query_as!(
-            User,
-            "
-            SELECT
-                user_id AS id, status
-            FROM
-                team_members
-            WHERE
-                name = ?1
-            ",
-            team_name
-        )
-        .fetch_all(&mut *db)
-        .await?;
+        let users = sqlx::query_file_as!(User, "sql/team/fetch_members.sql", team_name)
+            .fetch_all(&mut *db)
+            .await?;
 
         Ok(users)
     }
@@ -126,19 +77,9 @@ impl Team {
     /// * `db` - Conenction to SQL database
     /// * `user` - User to add
     pub async fn add_member(&self, db: &mut SqlConn, user: &User) -> anyhow::Result<()> {
-        sqlx::query!(
-            "
-            INSERT INTO
-                members (user_id, team_id)
-            VALUES
-                (?1, ?2)
-            ON CONFLICT(user_id, team_id) DO NOTHING
-            ",
-            user.id,
-            self.id
-        )
-        .execute(&mut *db)
-        .await?;
+        sqlx::query_file!("sql/team/add_member.sql", user.id, self.id)
+            .execute(&mut *db)
+            .await?;
 
         Ok(())
     }
@@ -151,20 +92,9 @@ impl Team {
     /// * `db` - Conenction to SQL database
     /// * `user` - User to add
     pub async fn delete_member(&self, db: &mut SqlConn, user: &User) -> anyhow::Result<()> {
-        sqlx::query!(
-            "
-            DELETE FROM
-                members
-            WHERE
-                user_id = ?1
-                    AND
-                team_id = ?2
-            ",
-            user.id,
-            self.id
-        )
-        .execute(&mut *db)
-        .await?;
+        sqlx::query_file!("sql/team/delete_member.sql", user.id, self.id)
+            .execute(&mut *db)
+            .await?;
 
         Ok(())
     }
@@ -177,20 +107,9 @@ impl Team {
     /// # Arguments
     /// * `db` - Connection to SQL database
     pub async fn save(&self, db: &mut SqlConn) -> anyhow::Result<()> {
-        sqlx::query!(
-            "
-            UPDATE
-                teams
-            SET
-                name = ?1
-            WHERE
-                id = ?2
-            ",
-            self.name,
-            self.id
-        )
-        .execute(&mut *db)
-        .await?;
+        sqlx::query_file!("sql/team/save.sql", self.name, self.id)
+            .execute(&mut *db)
+            .await?;
 
         Ok(())
     }
@@ -199,17 +118,9 @@ impl Team {
     ///
     /// *THIS ACTION CANNOT BE UNDONE*
     pub async fn delete(self, db: &mut SqlConn) -> anyhow::Result<()> {
-        sqlx::query!(
-            "
-            DELETE FROM
-                teams
-            WHERE
-                id = ?1
-            ",
-            self.id
-        )
-        .execute(&mut *db)
-        .await?;
+        sqlx::query_file!("sql/team/delete.sql", self.id)
+            .execute(&mut *db)
+            .await?;
 
         Ok(())
     }

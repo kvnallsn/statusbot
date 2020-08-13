@@ -43,19 +43,8 @@ impl User {
         // Parse the user id, if necessary
         let user_id = extract_user_id!(user_id).unwrap();
 
-        let mut rows = sqlx::query_as!(
-            User,
-            "
-            SELECT
-                id, status
-            FROM
-                users
-            WHERE
-                id = ?1
-            ",
-            user_id
-        )
-        .fetch(&mut *db);
+        let mut rows =
+            sqlx::query_file_as!(User, "sql/user/fetch_by_id.sql", user_id).fetch(&mut *db);
 
         rows.try_next().await.ok().flatten()
     }
@@ -70,20 +59,9 @@ impl User {
         // Parse the user id, if necessary
         let user_id = extract_user_id!(user_id).unwrap();
 
-        let user = sqlx::query_as!(
-            User,
-            "
-            SELECT
-                id, status
-            FROM
-                users
-            WHERE
-                id = ?1
-            ",
-            user_id
-        )
-        .fetch_one(&mut *db)
-        .await;
+        let user = sqlx::query_file_as!(User, "sql/user/fetch_by_id.sql", user_id)
+            .fetch_one(&mut *db)
+            .await;
 
         match user {
             Ok(user) => Ok(user),
@@ -119,20 +97,9 @@ impl User {
         let id = self.id.clone();
         let status = self.status.clone();
 
-        sqlx::query!(
-            "
-            INSERT INTO
-                users (id, status)
-            VALUES
-                (?1, ?2)
-            ON CONFLICT(id) DO UPDATE SET
-                status = excluded.status
-            ",
-            id,
-            status
-        )
-        .execute(&mut *db)
-        .await?;
+        sqlx::query_file!("sql/user/save.sql", id, status)
+            .execute(&mut *db)
+            .await?;
 
         Ok(())
     }
