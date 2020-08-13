@@ -59,11 +59,11 @@ struct Opt {
     database: String,
 
     /// IP address to listen on/bind
-    #[structopt(short, long, default_value = "0.0.0.0")]
+    #[structopt(short, long, env = "HOST", default_value = "0.0.0.0")]
     host: String,
 
     /// Port to listen on/bind
-    #[structopt(short, long, default_value = "5010")]
+    #[structopt(short, long, env = "PORT", default_value = "5010")]
     port: u16,
 
     /// Skip running migrations when app starts
