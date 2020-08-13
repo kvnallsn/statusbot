@@ -1,0 +1,159 @@
+{
+  "db": "PostgreSQL",
+  "0ccd09b5e2fff0dea369b6c50fd314222d98b80c055a89caff4ab4bb37f2d7ce": {
+    "query": "DELETE FROM\n    teams\nWHERE\n    id = $1\n",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": []
+    }
+  },
+  "386846c71e9e32e63eeea9261962a3a05243ab098ba24150d3bb0b44011cbaef": {
+    "query": "DELETE FROM\n    members\nWHERE\n    user_id = $1\n        AND\n    team_id = $2\n",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": []
+    }
+  },
+  "4423796f5b24f1aaa5b253ec56754e54402fb4fb3c0beb0dd0cf99115b3d49b8": {
+    "query": "SELECT\n    id, status\nFROM\n    users\nWHERE\n    id = $1\n",
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "status",
+          "ordinal": 1,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        true
+      ]
+    }
+  },
+  "51add7818ff818b920878e45c056888ba9d129a70ddb7fb65faf4ab0c74fe112": {
+    "query": "INSERT INTO\n    users (id, status)\nVALUES\n    ($1, $2)\nON CONFLICT(id)\n    DO UPDATE SET\n        status = excluded.status\n",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": []
+    }
+  },
+  "56965335ce9f3d419ed0378320eafce961cd604ab95be19c6b6d8486c53843a7": {
+    "query": "UPDATE\n    teams\nSET\n    name = $1\nWHERE\n    id = $2\n",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": []
+    }
+  },
+  "63cad4e9df219a58d29f5880e6653a644dfbe5b760fd669cda0b7207442218ac": {
+    "query": "INSERT INTO\n    members (user_id, team_id)\nVALUES\n    ($1, $2)\nON CONFLICT(user_id, team_id)\n    DO NOTHING\n",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": []
+    }
+  },
+  "967a73f54ff4b10605a00118a8e4cf4a7acdacb89cdc33fecaecd56020cfdc22": {
+    "query": "SELECT\n    members.user_id AS id,\n    users.status\nFROM\n    teams\nINNER JOIN\n    members\n    ON members.team_id = teams.id\nINNER JOIN\n    users\n    ON users.id = members.user_id\nWHERE\n    teams.name = $1\n",
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "status",
+          "ordinal": 1,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        true
+      ]
+    }
+  },
+  "9f4e8d6ec9a4b22ba2bf706d31445cbb8abecb977f823925ec1d5ade105b38a3": {
+    "query": "INSERT INTO\n    teams (name)\nVALUES\n    ($1)\n",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": []
+    }
+  },
+  "ba503176d0c15eeb437883ac866bead73753adc3636b0043270d84d28ea12c05": {
+    "query": "SELECT\n    id, name\nFROM\n    teams\n",
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 0
+      },
+      "nullable": [
+        false,
+        false
+      ]
+    }
+  },
+  "c8b5e5f0afecd74e1390ae03fd5706111abe329ee1217999c75beb6e34ba8fa7": {
+    "query": "SELECT\n    id, name\nFROM\n    teams\nWHERE\n    name = $1\n",
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false
+      ]
+    }
+  }
+}
