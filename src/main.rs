@@ -16,7 +16,11 @@ use anyhow::Result;
 use async_std::task;
 use async_trait::async_trait;
 use serde_json::Value;
-use sqlx::{pool::PoolConnection, sqlite::SqlitePool, Sqlite};
+use sqlx::{
+    pool::PoolConnection,
+    sqlite::{Sqlite, SqlitePool},
+};
+use structopt::StructOpt;
 use tide::{
     http::headers::HeaderValue,
     security::{CorsMiddleware, Origin},
@@ -25,7 +29,27 @@ use tide::{
 use tide_tracing::TraceMiddleware;
 use tracing::Level;
 
+type SqlPool = SqlitePool;
 type SqlConn = PoolConnection<Sqlite>;
+
+/// Command line options and arguments
+#[derive(StructOpt, Debug)]
+#[structopt(name = "statusbot")]
+struct Opt {
+    /// Database connection string
+    // SQLite: `sqlite://statusbot.sqlite3`
+    // Postgres: `postgres://<username>:<password>@<host>:<port>/<database>`
+    #[structopt(short, long, default_value = "sqlite://statusbot.sqlite3")]
+    database: String,
+
+    /// IP address to listen on/bind
+    #[structopt(short, long, default_value = "0.0.0.0")]
+    host: String,
+
+    /// Port to listen on/bind
+    #[structopt(short, long, default_value = "5010")]
+    port: u16,
+}
 
 #[async_trait]
 pub trait HasDb {
@@ -37,7 +61,7 @@ pub trait HasDb {
 
 #[async_trait]
 impl HasDb for tide::Request<State> {
-    type Target = PoolConnection<Sqlite>;
+    type Target = SqlConn;
     type Error = sqlx::Error;
 
     async fn db(&self) -> std::result::Result<Self::Target, Self::Error> {
@@ -47,12 +71,12 @@ impl HasDb for tide::Request<State> {
 
 #[derive(Clone, Debug)]
 pub struct State {
-    /// A configured sqlite pool
-    pool: SqlitePool,
+    /// A configured sql pool
+    pool: SqlPool,
 }
 
 impl State {
-    pub fn new(pool: SqlitePool) -> Self {
+    pub fn new(pool: SqlPool) -> Self {
         State { pool }
     }
 }
@@ -68,7 +92,7 @@ pub async fn handle_post(mut req: tide::Request<State>) -> tide::Result<tide::Re
     let body = req.body_bytes().await?;
     let json: Value = serde_json::from_slice(&body)?;
 
-    // now get a connection to the sqlite database
+    // now get a connection to the sql database
     let mut conn = req.db().await?;
 
     match json["type"].as_str() {
@@ -80,7 +104,7 @@ pub async fn handle_post(mut req: tide::Request<State>) -> tide::Result<tide::Re
     }
 }
 
-async fn run_server() -> Result<()> {
+async fn run_server(opt: Opt) -> Result<()> {
     // configure logging via `Tracing`
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
@@ -97,8 +121,8 @@ async fn run_server() -> Result<()> {
     // configure tracing middleware
     let trace = TraceMiddleware::new();
 
-    // connect to sqlite and build connection pool
-    let pool = SqlitePool::connect("sqlite://statusbot.sqlite3").await?;
+    // connect to sql and build connection pool
+    let pool = SqlPool::connect(&opt.database).await?;
 
     // create the actual web app
     let mut app = tide::with_state(State::new(pool));
@@ -112,14 +136,16 @@ async fn run_server() -> Result<()> {
     app.at("/location").post(handlers::command::location);
 
     // run the app
-    app.listen("0.0.0.0:5010").await?;
+    app.listen(format!("{}:{}", opt.host, opt.port)).await?;
 
     Ok(())
 }
 
 fn main() {
+    let opt = Opt::from_args();
+
     task::block_on(async {
-        if let Err(e) = run_server().await {
+        if let Err(e) = run_server(opt).await {
             eprintln!("{:?}", e);
         }
     });
