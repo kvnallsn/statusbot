@@ -16,10 +16,7 @@ use anyhow::Result;
 use async_std::task;
 use async_trait::async_trait;
 use serde_json::Value;
-use sqlx::{
-    pool::PoolConnection,
-    sqlite::{Sqlite, SqlitePool},
-};
+use sqlx::pool::PoolConnection;
 use structopt::StructOpt;
 use tide::{
     http::headers::HeaderValue,
@@ -29,8 +26,21 @@ use tide::{
 use tide_tracing::TraceMiddleware;
 use tracing::Level;
 
-type SqlPool = SqlitePool;
-type SqlConn = PoolConnection<Sqlite>;
+#[cfg(all(feature = "sqlite", feature = "postgres"))]
+compile_error!("Must enable only feature `sqlite` or `postgres`. Bot cannot be enabled");
+
+#[cfg(not(any(feature = "sqlite", feature = "postgres")))]
+compile_error!("Must enable either feature `sqlite` or `postgres`. Bot cannot be enabled");
+
+#[cfg(feature = "sqlite")]
+type SqlPool = sqlx::sqlite::SqlitePool;
+#[cfg(feature = "sqlite")]
+type SqlConn = PoolConnection<sqlx::Sqlite>;
+
+#[cfg(feature = "postgres")]
+type SqlPool = sqlx::postgres::PgPool;
+#[cfg(feature = "postgres")]
+type SqlConn = PoolConnection<sqlx::Postgres>;
 
 /// Command line options and arguments
 #[derive(StructOpt, Debug)]
@@ -53,18 +63,18 @@ struct Opt {
 
 #[async_trait]
 pub trait HasDb {
-    type Target;
+    //type Target;
     type Error;
 
-    async fn db(&self) -> std::result::Result<Self::Target, Self::Error>;
+    async fn db(&self) -> std::result::Result<SqlConn, Self::Error>;
 }
 
 #[async_trait]
 impl HasDb for tide::Request<State> {
-    type Target = SqlConn;
+    //type Target = SqlConn;
     type Error = sqlx::Error;
 
-    async fn db(&self) -> std::result::Result<Self::Target, Self::Error> {
+    async fn db(&self) -> std::result::Result<SqlConn, Self::Error> {
         self.state().pool.acquire().await
     }
 }
@@ -93,7 +103,7 @@ pub async fn handle_post(mut req: tide::Request<State>) -> tide::Result<tide::Re
     let json: Value = serde_json::from_slice(&body)?;
 
     // now get a connection to the sql database
-    let mut conn = req.db().await?;
+    let mut conn: SqlConn = req.db().await?;
 
     match json["type"].as_str() {
         Some("url_verification") => handlers::register::url_verification(&body),
