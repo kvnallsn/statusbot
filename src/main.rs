@@ -17,6 +17,7 @@ use async_std::task;
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
+use std::fmt;
 use structopt::StructOpt;
 use tide::{
     http::headers::HeaderValue,
@@ -49,7 +50,12 @@ struct Opt {
     /// Database connection string
     // SQLite: `sqlite://statusbot.sqlite3`
     // Postgres: `postgres://<username>:<password>@<host>:<port>/<database>`
-    #[structopt(short, long, default_value = "sqlite://statusbot.sqlite3")]
+    #[structopt(
+        short,
+        long,
+        env = "DATABASE_URL",
+        default_value = "sqlite://statusbot.sqlite3"
+    )]
     database: String,
 
     /// IP address to listen on/bind
@@ -59,6 +65,16 @@ struct Opt {
     /// Port to listen on/bind
     #[structopt(short, long, default_value = "5010")]
     port: u16,
+
+    /// Skip running migrations when app starts
+    #[structopt(long)]
+    skip_migrations: bool,
+}
+
+impl fmt::Display for Opt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "host={}, port={}", self.host, self.port)
+    }
 }
 
 #[async_trait]
@@ -114,14 +130,30 @@ pub async fn handle_post(mut req: tide::Request<State>) -> tide::Result<tide::Re
     }
 }
 
+async fn run_migrations(db: &SqlPool) -> Result<()> {
+    use sqlx::migrate::Migrator;
+    use std::path::Path;
+
+    #[cfg(feature = "postgres")]
+    let path = Path::new("./postgres/migrations");
+
+    #[cfg(feature = "sqlite")]
+    let path = Path::new("./sqlite/migrations");
+
+    tracing::info!("running migrations [{}]", path.display());
+
+    let migrator = Migrator::new(path).await?;
+    match migrator.run(db).await {
+        Ok(()) => tracing::info!("migrations complete"),
+        Err(e) => {
+            tracing::error!("failed to run migrations:\n{:?}", e);
+        }
+    }
+
+    Ok(())
+}
+
 async fn run_server(opt: Opt) -> Result<()> {
-    // configure logging via `Tracing`
-    let subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
-        .finish();
-
-    tracing::subscriber::set_global_default(subscriber)?;
-
     // configure CORS middleware
     let cors = CorsMiddleware::new()
         .allow_methods("GET, POST, OPTIONS".parse::<HeaderValue>().unwrap())
@@ -133,6 +165,11 @@ async fn run_server(opt: Opt) -> Result<()> {
 
     // connect to sql and build connection pool
     let pool = SqlPool::connect(&opt.database).await?;
+
+    if !opt.skip_migrations {
+        // run migrations
+        run_migrations(&pool).await?;
+    }
 
     // create the actual web app
     let mut app = tide::with_state(State::new(pool));
@@ -146,17 +183,33 @@ async fn run_server(opt: Opt) -> Result<()> {
     app.at("/location").post(handlers::command::location);
 
     // run the app
+    tracing::info!("Starting web server");
     app.listen(format!("{}:{}", opt.host, opt.port)).await?;
 
     Ok(())
 }
 
-fn main() {
+fn main() -> Result<()> {
+    // load environment variables from .env file
+    dotenv::dotenv().ok();
+
     let opt = Opt::from_args();
+
+    // configure logging via `Tracing`
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::DEBUG)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber)?;
+
+    tracing::info!("Starting StatusBot");
+    tracing::debug!("ARGS {}", opt);
 
     task::block_on(async {
         if let Err(e) = run_server(opt).await {
-            eprintln!("{:?}", e);
+            eprintln!("Failed to run server: {:?}", e);
         }
     });
+
+    Ok(())
 }
