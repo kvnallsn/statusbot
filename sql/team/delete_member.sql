@@ -1,6 +1,6 @@
 DELETE FROM
     members
 WHERE
-    user_id = ?
+    user_id = $1
         AND
-    team_id = ?
+    team_id = $2

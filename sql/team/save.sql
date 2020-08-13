@@ -1,6 +1,6 @@
 UPDATE
     teams
 SET
-    name = ?
+    name = $1
 WHERE
-    id = ?
+    id = $2

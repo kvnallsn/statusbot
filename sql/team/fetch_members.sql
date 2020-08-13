@@ -1,7 +1,13 @@
 SELECT
-    user_id AS id,
-    status
+    members.user_id AS id,
+    users.status
 FROM
-    team_members
+    teams
+INNER JOIN
+    members
+    ON members.team_id = teams.id
+INNER JOIN
+    users
+    ON users.id = members.user_id
 WHERE
-    name = ?
+    teams.name = $1

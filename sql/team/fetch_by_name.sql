@@ -3,4 +3,4 @@ SELECT
 FROM
     teams
 WHERE
-    name = ?
+    name = $1

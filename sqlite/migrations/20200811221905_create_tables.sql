@@ -16,16 +16,3 @@ CREATE TABLE IF NOT EXISTS members (
     FOREIGN KEY(team_id) REFERENCES teams(id),
     UNIQUE(user_id, team_id)
 );
-
-CREATE VIEW IF NOT EXISTS team_members
-AS
-    SELECT
-        teams.id, teams.name, members.user_id, users.status
-    FROM
-        teams
-    INNER JOIN
-        members
-        ON members.team_id = teams.id
-    INNER JOIN
-        users
-        ON users.id = members.user_id

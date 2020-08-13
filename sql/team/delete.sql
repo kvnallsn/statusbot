@@ -1,4 +1,4 @@
 DELETE FROM
     teams
 WHERE
-    id = ?
+    id = $1
