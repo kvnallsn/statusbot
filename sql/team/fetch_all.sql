@@ -1,4 +1,5 @@
 SELECT
-    id, name
+    id,
+    name
 FROM
     teams

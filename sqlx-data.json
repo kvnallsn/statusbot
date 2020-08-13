@@ -5,7 +5,9 @@
     "describe": {
       "columns": [],
       "parameters": {
-        "Right": 1
+        "Left": [
+          "Int8"
+        ]
       },
       "nullable": []
     }
@@ -15,7 +17,10 @@
     "describe": {
       "columns": [],
       "parameters": {
-        "Right": 2
+        "Left": [
+          "Text",
+          "Int8"
+        ]
       },
       "nullable": []
     }
@@ -25,18 +30,20 @@
     "describe": {
       "columns": [
         {
-          "name": "id",
           "ordinal": 0,
+          "name": "id",
           "type_info": "Text"
         },
         {
-          "name": "status",
           "ordinal": 1,
+          "name": "status",
           "type_info": "Text"
         }
       ],
       "parameters": {
-        "Right": 1
+        "Left": [
+          "Text"
+        ]
       },
       "nullable": [
         false,
@@ -49,7 +56,10 @@
     "describe": {
       "columns": [],
       "parameters": {
-        "Right": 2
+        "Left": [
+          "Text",
+          "Text"
+        ]
       },
       "nullable": []
     }
@@ -59,7 +69,10 @@
     "describe": {
       "columns": [],
       "parameters": {
-        "Right": 2
+        "Left": [
+          "Text",
+          "Int8"
+        ]
       },
       "nullable": []
     }
@@ -69,9 +82,36 @@
     "describe": {
       "columns": [],
       "parameters": {
-        "Right": 2
+        "Left": [
+          "Text",
+          "Int8"
+        ]
       },
       "nullable": []
+    }
+  },
+  "7bce784ff00766218b4d4eb25ff1b928c59943ef82b0afb9926e7c96c913fcf5": {
+    "query": "SELECT\n    id,\n    name\nFROM\n    teams\n",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "name",
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Left": []
+      },
+      "nullable": [
+        false,
+        false
+      ]
     }
   },
   "967a73f54ff4b10605a00118a8e4cf4a7acdacb89cdc33fecaecd56020cfdc22": {
@@ -79,18 +119,20 @@
     "describe": {
       "columns": [
         {
-          "name": "id",
           "ordinal": 0,
+          "name": "id",
           "type_info": "Text"
         },
         {
-          "name": "status",
           "ordinal": 1,
+          "name": "status",
           "type_info": "Text"
         }
       ],
       "parameters": {
-        "Right": 1
+        "Left": [
+          "Text"
+        ]
       },
       "nullable": [
         false,
@@ -103,7 +145,9 @@
     "describe": {
       "columns": [],
       "parameters": {
-        "Right": 1
+        "Left": [
+          "Text"
+        ]
       },
       "nullable": []
     }
@@ -113,18 +157,18 @@
     "describe": {
       "columns": [
         {
-          "name": "id",
           "ordinal": 0,
-          "type_info": "Int64"
+          "name": "id",
+          "type_info": "Int8"
         },
         {
-          "name": "name",
           "ordinal": 1,
+          "name": "name",
           "type_info": "Text"
         }
       ],
       "parameters": {
-        "Right": 0
+        "Left": []
       },
       "nullable": [
         false,
@@ -137,18 +181,46 @@
     "describe": {
       "columns": [
         {
-          "name": "id",
           "ordinal": 0,
-          "type_info": "Int64"
+          "name": "id",
+          "type_info": "Int8"
         },
         {
-          "name": "name",
           "ordinal": 1,
+          "name": "name",
           "type_info": "Text"
         }
       ],
       "parameters": {
-        "Right": 1
+        "Left": [
+          "Text"
+        ]
+      },
+      "nullable": [
+        false,
+        false
+      ]
+    }
+  },
+  "f253a15a718c7253995a35ee52f7c3828a3bd976dc62dc760976522595814c3b": {
+    "query": "SELECT\n    id,\n    name\nFROM\n    teams\nWHERE\n    name = $1\n",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 1,
+          "name": "name",
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
       },
       "nullable": [
         false,
