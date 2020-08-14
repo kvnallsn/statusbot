@@ -1,0 +1,9 @@
+{
+    "name": "statusbot",
+    "description": "Slack bot that allows for user location tracking via monitored channels",
+    "buildpacks": [
+        {
+            "url": "https://github.com/kvnallsn/heroku-buildpack-rust-sqlx"
+        }
+    ]
+}
